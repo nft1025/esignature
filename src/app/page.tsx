@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useRef } from 'react';
@@ -82,13 +83,15 @@ export default function QuickSign() {
                 <Files className="w-5 h-5 text-primary" />
                 Documents
               </h2>
-              <Button 
-                onClick={() => fileInputRef.current?.click()}
-                className="rounded-full shadow-lg shadow-primary/20 bg-primary hover:bg-primary/90"
-              >
-                <FilePlus className="w-4 h-4 mr-2" />
-                Upload PDFs
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded-full shadow-lg shadow-primary/20 bg-primary hover:bg-primary/90"
+                >
+                  <FilePlus className="w-4 h-4 mr-2" />
+                  Upload
+                </Button>
+              </div>
               <input 
                 type="file" 
                 multiple 
@@ -106,7 +109,7 @@ export default function QuickSign() {
                 </div>
                 <h3 className="text-lg font-medium text-foreground">No documents uploaded yet</h3>
                 <p className="text-muted-foreground text-sm max-w-xs text-center mt-2">
-                  Upload multiple PDF files to begin batch signing with AI-assisted placement.
+                  Upload PDF files to begin batch signing with AI-assisted placement.
                 </p>
               </div>
             ) : (
