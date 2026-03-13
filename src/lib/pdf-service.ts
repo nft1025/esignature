@@ -1,3 +1,4 @@
+
 import * as pdfjsLib from 'pdfjs-dist';
 import { PDFDocument } from 'pdf-lib';
 
@@ -28,7 +29,7 @@ export async function signPdf(
 ): Promise<Uint8Array> {
   const arrayBuffer = await file.arrayBuffer();
   
-  // Create fresh copies of buffers
+  // Create fresh copies of buffers as Uint8Array for reliability
   const pdfJsBytes = new Uint8Array(arrayBuffer.slice(0));
   const pdfLibBytes = new Uint8Array(arrayBuffer.slice(0));
   
@@ -94,9 +95,7 @@ export async function signPdf(
   if (foundPos) {
     // Center over the text
     x = foundPos.x + (foundPos.textWidth / 2) - (sigWidth / 2);
-    // Lowered Y coordinate to overlap with the text
-    // foundPos.y is the baseline. Moving it slightly lower than the baseline
-    // so the signature overlaps the name as requested.
+    // Overlap with the name as requested
     y = foundPos.y - (sigHeight * 0.3); 
 
     // Final safety bounds
