@@ -29,10 +29,13 @@ export async function signPdf(
   signatureImage: string,
   targetText: string
 ): Promise<Uint8Array> {
-  const existingPdfBytes = await file.arrayBuffer();
+  // Use Uint8Array for the PDF bytes to ensure compatibility with both pdfjs and pdf-lib
+  const arrayBuffer = await file.arrayBuffer();
+  const existingPdfBytes = new Uint8Array(arrayBuffer);
   
   // 1. Initialize pdfjs to find text coordinates
-  const pdfJsDoc = await pdfjsLib.getDocument({ data: existingPdfBytes }).promise;
+  // Pass a slice (copy) to pdfjs to prevent potential buffer interference
+  const pdfJsDoc = await pdfjsLib.getDocument({ data: existingPdfBytes.slice(0) }).promise;
   let foundPos: { pageIndex: number; x: number; y: number } | null = null;
 
   if (targetText && targetText.trim() !== "" && targetText !== "Signature") {
@@ -43,7 +46,7 @@ export async function signPdf(
       const page = await pdfJsDoc.getPage(i);
       const content = await page.getTextContent();
       
-      // Look for an item that contains our target text or is part of it
+      // Look for an item that contains our target text
       const foundItem = content.items.find((item: any) => {
         const itemStr = (item.str || "").trim().toLowerCase();
         if (itemStr.length < 2) return false;
@@ -51,6 +54,7 @@ export async function signPdf(
       }) as any;
 
       if (foundItem && foundItem.transform) {
+        // transform[4] is X, transform[5] is Y in PDF coordinate space (bottom-left origin)
         foundPos = {
           pageIndex: i - 1,
           x: foundItem.transform[4],
@@ -69,7 +73,7 @@ export async function signPdf(
   const pages = pdfDoc.getPages();
   const targetPageIndex = foundPos ? foundPos.pageIndex : pages.length - 1;
   const page = pages[targetPageIndex];
-  const { width } = page.getSize();
+  const { width, height } = page.getSize();
 
   // Signature dimensions
   const sigWidth = 140;
@@ -80,10 +84,14 @@ export async function signPdf(
   let y = 100;
 
   if (foundPos) {
-    // If coordinates were detected, use them.
-    // Use the detected X and place the signature slightly above the detected Y.
+    // detected X is the start of the text; detected Y is the baseline.
+    // We place the signature slightly above the baseline.
     x = foundPos.x;
-    y = foundPos.y + 12; // Offset to place signature above the name line
+    y = foundPos.y + 10; 
+
+    // Safety bounds checking to keep the signature on the page
+    x = Math.max(10, Math.min(x, width - sigWidth - 10));
+    y = Math.max(10, Math.min(y, height - sigHeight - 10));
   }
 
   page.drawImage(signatureImg, {
