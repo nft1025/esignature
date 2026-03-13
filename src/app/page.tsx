@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useRef } from 'react';
@@ -7,7 +6,7 @@ import { DocumentCard } from '@/components/DocumentCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { FilePlus, PenTool, LayoutDashboard, ShieldCheck, Files } from 'lucide-react';
+import { FilePlus, PenTool, LayoutDashboard, ShieldCheck, Files, FileText } from 'lucide-react';
 import { Toaster } from '@/components/ui/toaster';
 
 export default function QuickSign() {
