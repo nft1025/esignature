@@ -76,12 +76,12 @@ export async function signPdf(
   // Signature dimensions
   const sigDims = signatureImg.scale(1.0);
   
-  // Fit signature to the width of the detected text (plus a tiny margin)
-  let sigWidth = foundPos ? foundPos.textWidth : 150;
+  // Fit signature to the width of the detected text
+  let sigWidth = foundPos ? foundPos.textWidth * 1.2 : 150; // Slightly wider for style
   let sigHeight = (sigDims.height / sigDims.width) * sigWidth;
   
   // Cap dimensions for visual sanity
-  const MAX_SIG_HEIGHT = 60;
+  const MAX_SIG_HEIGHT = 80;
   if (sigHeight > MAX_SIG_HEIGHT) {
     sigHeight = MAX_SIG_HEIGHT;
     sigWidth = (sigDims.width / sigDims.height) * sigHeight;
@@ -92,14 +92,16 @@ export async function signPdf(
   let y = 100;
 
   if (foundPos) {
-    // Center above the text
+    // Center over the text
     x = foundPos.x + (foundPos.textWidth / 2) - (sigWidth / 2);
-    // Place strictly above the baseline
-    y = foundPos.y + (foundPos.textHeight * 0.5); 
+    // Lowered Y coordinate to overlap with the text
+    // foundPos.y is the baseline. Moving it slightly lower than the baseline
+    // so the signature overlaps the name as requested.
+    y = foundPos.y - (sigHeight * 0.3); 
 
     // Final safety bounds
-    x = Math.max(20, Math.min(x, pageWidth - sigWidth - 20));
-    y = Math.max(20, Math.min(y, pageHeight - sigHeight - 20));
+    x = Math.max(10, Math.min(x, pageWidth - sigWidth - 10));
+    y = Math.max(10, Math.min(y, pageHeight - sigHeight - 10));
   }
 
   page.drawImage(signatureImg, {
