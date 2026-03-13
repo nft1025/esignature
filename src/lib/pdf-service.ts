@@ -30,31 +30,67 @@ export async function signPdf(
   targetText: string
 ): Promise<Uint8Array> {
   const existingPdfBytes = await file.arrayBuffer();
-  const pdfDoc = await PDFDocument.load(existingPdfBytes);
   
-  // Clean signature image data URL if necessary
+  // 1. Initialize pdfjs to find text coordinates
+  const pdfJsDoc = await pdfjsLib.getDocument({ data: existingPdfBytes }).promise;
+  let foundPos: { pageIndex: number; x: number; y: number } | null = null;
+
+  if (targetText && targetText.trim() !== "" && targetText !== "Signature") {
+    const normalizedTarget = targetText.trim().toLowerCase();
+    
+    // Scan pages to find the target text coordinates
+    for (let i = 1; i <= pdfJsDoc.numPages; i++) {
+      const page = await pdfJsDoc.getPage(i);
+      const content = await page.getTextContent();
+      
+      // Look for an item that contains our target text or is part of it
+      const foundItem = content.items.find((item: any) => {
+        const itemStr = (item.str || "").trim().toLowerCase();
+        if (itemStr.length < 2) return false;
+        return itemStr.includes(normalizedTarget) || normalizedTarget.includes(itemStr);
+      }) as any;
+
+      if (foundItem && foundItem.transform) {
+        foundPos = {
+          pageIndex: i - 1,
+          x: foundItem.transform[4],
+          y: foundItem.transform[5]
+        };
+        break;
+      }
+    }
+  }
+
+  // 2. Initialize pdf-lib to perform the actual signing
+  const pdfDoc = await PDFDocument.load(existingPdfBytes);
   const signatureImageBytes = await fetch(signatureImage).then((res) => res.arrayBuffer());
   const signatureImg = await pdfDoc.embedPng(signatureImageBytes);
 
   const pages = pdfDoc.getPages();
-  
-  // Finding placement is simplified here. 
-  // In a real robust app, we'd use pdfjs-dist to get the coordinates of 'targetText'.
-  // For this implementation, we'll place it on the last page near the bottom or center 
-  // if coordinates aren't easily detectable without a full layout engine.
-  // Ideally, we'd search each page for the targetText.
-  
-  const lastPage = pages[pages.length - 1];
-  const { width, height } = lastPage.getSize();
+  const targetPageIndex = foundPos ? foundPos.pageIndex : pages.length - 1;
+  const page = pages[targetPageIndex];
+  const { width } = page.getSize();
 
-  // Draw the signature
-  // Note: Finding exact coordinates of a specific text string in pdf-lib is non-trivial.
-  // We place it at a default location for demonstration, ideally we'd pass coordinates from the AI flow.
-  lastPage.drawImage(signatureImg, {
-    x: width / 2 - 50,
-    y: 100,
-    width: 100,
-    height: 50,
+  // Signature dimensions
+  const sigWidth = 140;
+  const sigHeight = 70;
+  
+  // Default fallback position (bottom center)
+  let x = width / 2 - sigWidth / 2;
+  let y = 100;
+
+  if (foundPos) {
+    // If coordinates were detected, use them.
+    // Use the detected X and place the signature slightly above the detected Y.
+    x = foundPos.x;
+    y = foundPos.y + 12; // Offset to place signature above the name line
+  }
+
+  page.drawImage(signatureImg, {
+    x,
+    y,
+    width: sigWidth,
+    height: sigHeight,
   });
 
   return await pdfDoc.save();
