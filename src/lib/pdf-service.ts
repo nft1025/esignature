@@ -4,7 +4,9 @@ import { PDFDocument } from 'pdf-lib';
 
 // Set up worker
 if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+  // For pdfjs-dist 4.x+, the worker is an ES module (.mjs)
+  // Using unpkg ensures we get the exact version matching our installed package
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
 }
 
 export async function extractPdfText(file: File): Promise<string> {
