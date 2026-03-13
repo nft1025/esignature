@@ -28,7 +28,7 @@ export async function signPdf(
 ): Promise<Uint8Array> {
   const arrayBuffer = await file.arrayBuffer();
   
-  // Create fresh copies of buffers to avoid library interference
+  // Create fresh copies of buffers
   const pdfJsBytes = new Uint8Array(arrayBuffer.slice(0));
   const pdfLibBytes = new Uint8Array(arrayBuffer.slice(0));
   
@@ -36,16 +36,18 @@ export async function signPdf(
   const pdfJsDoc = await pdfjsLib.getDocument({ data: pdfJsBytes }).promise;
   let foundPos: { pageIndex: number; x: number; y: number; textWidth: number; textHeight: number } | null = null;
 
+  // We search backwards from the end of the document as signature blocks are usually at the end
   if (targetText && targetText.trim() !== "" && targetText !== "Signature") {
     const normalizedTarget = targetText.trim().toLowerCase();
     
-    for (let i = 1; i <= pdfJsDoc.numPages; i++) {
+    for (let i = pdfJsDoc.numPages; i >= 1; i--) {
       const page = await pdfJsDoc.getPage(i);
       const content = await page.getTextContent();
       
+      // Look for the item that most closely matches the name
       const foundItem = content.items.find((item: any) => {
         const itemStr = (item.str || "").trim().toLowerCase();
-        return itemStr.includes(normalizedTarget) || normalizedTarget.includes(itemStr);
+        return itemStr.length > 2 && (itemStr.includes(normalizedTarget) || normalizedTarget.includes(itemStr));
       }) as any;
 
       if (foundItem && foundItem.transform) {
@@ -54,7 +56,7 @@ export async function signPdf(
           x: foundItem.transform[4],
           y: foundItem.transform[5],
           textWidth: foundItem.width || 100,
-          textHeight: Math.abs(foundItem.transform[3]) || 12 // Estimate height from vertical scale
+          textHeight: Math.abs(foundItem.transform[3]) || 12 
         };
         break;
       }
@@ -71,33 +73,33 @@ export async function signPdf(
   const page = pages[targetPageIndex];
   const { width: pageWidth, height: pageHeight } = page.getSize();
 
-  // Signature dimensions - Fit to text width
+  // Signature dimensions
   const sigDims = signatureImg.scale(1.0);
-  let sigWidth = foundPos ? foundPos.textWidth * 1.1 : 140; // 10% wider than text for flair
+  
+  // Fit signature to the width of the detected text (plus a tiny margin)
+  let sigWidth = foundPos ? foundPos.textWidth : 150;
   let sigHeight = (sigDims.height / sigDims.width) * sigWidth;
   
-  // Cap dimensions to prevent overflow on very small/large text
-  const MAX_SIG_HEIGHT = 80;
+  // Cap dimensions for visual sanity
+  const MAX_SIG_HEIGHT = 60;
   if (sigHeight > MAX_SIG_HEIGHT) {
     sigHeight = MAX_SIG_HEIGHT;
     sigWidth = (sigDims.width / sigDims.height) * sigHeight;
   }
 
-  // Default fallback position
+  // Positioning
   let x = pageWidth / 2 - sigWidth / 2;
   let y = 100;
 
   if (foundPos) {
-    // Center signature over the found text horizontally
+    // Center above the text
     x = foundPos.x + (foundPos.textWidth / 2) - (sigWidth / 2);
-    
-    // Position strictly ABOVE the text
-    // foundPos.y is the baseline, we add textHeight to clear the characters
-    y = foundPos.y + foundPos.textHeight + 2; 
+    // Place strictly above the baseline
+    y = foundPos.y + (foundPos.textHeight * 0.5); 
 
-    // Safety bounds checking
-    x = Math.max(10, Math.min(x, pageWidth - sigWidth - 10));
-    y = Math.max(10, Math.min(y, pageHeight - sigHeight - 10));
+    // Final safety bounds
+    x = Math.max(20, Math.min(x, pageWidth - sigWidth - 20));
+    y = Math.max(20, Math.min(y, pageHeight - sigHeight - 20));
   }
 
   page.drawImage(signatureImg, {

@@ -17,8 +17,8 @@ const DetectSignaturePlacementInputSchema = z.object({
 export type DetectSignaturePlacementInput = z.infer<typeof DetectSignaturePlacementInputSchema>;
 
 const DetectSignaturePlacementOutputSchema = z.object({
-  detectedPlacementText: z.string().describe('The exact line of text (e.g., signatory name) above which the signature should be placed.'),
-  contextKeyword: z.string().describe("The keyword (e.g., 'APPROVED BY', 'SIGNED BY') that indicates the signature placement."),
+  detectedPlacementText: z.string().describe('The exact name of the person who needs to sign.'),
+  contextKeyword: z.string().describe("The keyword found (e.g., 'SIGNED BY', 'APPROVED BY')."),
 });
 export type DetectSignaturePlacementOutput = z.infer<typeof DetectSignaturePlacementOutputSchema>;
 
@@ -30,30 +30,33 @@ const prompt = ai.definePrompt({
   name: 'detectSignaturePlacementPrompt',
   input: { schema: DetectSignaturePlacementInputSchema },
   output: { schema: DetectSignaturePlacementOutputSchema },
-  prompt: `You are an expert document analyst tasked with identifying the correct placement for a digital signature within a document.
-Your goal is to find specific keywords that indicate signature areas and then identify the signatory's name directly below them.
-The keywords to look for are: 'APPROVED BY', 'FOR APPROVAL', 'SIGNED BY', and similar phrases affirming the need for a signature.
+  prompt: `You are a document specialist. Your task is to find where a person should sign a document.
 
-Analyze the provided PDF text and perform the following steps:
-1.  Scan the text for any of the keywords listed above.
-2.  If a keyword is found, look for a name directly below it. This name is the signatory.
-3.  If a specific signatory name is provided, prioritize finding that name below one of the keywords. If no specific signatory name is provided, identify the first appropriate signatory name found below a keyword.
-4.  Extract the exact text of the signatory's name (the line where the signature should be placed above) and the keyword that led to its identification.
+Look at the document text provided below. 
+Find signature blocks which usually look like:
+"SIGNED BY:"
+"NAME"
 
-If multiple suitable placements are found, return the first one encountered in the document text.
-If no suitable placement is found, return empty strings for 'detectedPlacementText' and 'contextKeyword'.
+OR
 
-Here is the PDF text:
+"APPROVED BY:"
+"NAME"
+
+The "NAME" is usually on the line immediately following the keyword like "SIGNED BY" or "APPROVED BY".
+
+Instructions:
+1. Ignore "Date" or "To:" or "From:" headers at the top of the document.
+2. Look for keywords: "SIGNED BY", "APPROVED BY", "FOR APPROVAL", "SIGNATURE OF".
+3. Extract the name that appears directly under these keywords. 
+4. If a specific signatoryName is provided ("{{{signatoryName}}}"), look for exactly that name in a signature area.
+5. Return the full name as 'detectedPlacementText'.
+
+Document Text:
 ---
 {{{pdfText}}}
 ---
 
-{{#if signatoryName}}
-The specific signatory name to prioritize is: "{{{signatoryName}}}"
-{{/if}}
-
-Please provide the output in JSON format, strictly adhering to the following structure, and do not include any other text or explanation outside the JSON:
-`
+Return only JSON.`
 });
 
 const detectSignaturePlacementFlow = ai.defineFlow(
