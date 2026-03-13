@@ -34,7 +34,7 @@ export async function signPdf(
   
   // 1. Initialize pdfjs to find text coordinates
   const pdfJsDoc = await pdfjsLib.getDocument({ data: pdfJsBytes }).promise;
-  let foundPos: { pageIndex: number; x: number; y: number; textWidth: number } | null = null;
+  let foundPos: { pageIndex: number; x: number; y: number; textWidth: number; textHeight: number } | null = null;
 
   if (targetText && targetText.trim() !== "" && targetText !== "Signature") {
     const normalizedTarget = targetText.trim().toLowerCase();
@@ -53,7 +53,8 @@ export async function signPdf(
           pageIndex: i - 1,
           x: foundItem.transform[4],
           y: foundItem.transform[5],
-          textWidth: foundItem.width || 100
+          textWidth: foundItem.width || 100,
+          textHeight: Math.abs(foundItem.transform[3]) || 12 // Estimate height from vertical scale
         };
         break;
       }
@@ -70,23 +71,33 @@ export async function signPdf(
   const page = pages[targetPageIndex];
   const { width: pageWidth, height: pageHeight } = page.getSize();
 
-  // Signature dimensions
-  const sigWidth = 140;
-  const sigHeight = 70;
+  // Signature dimensions - Fit to text width
+  const sigDims = signatureImg.scale(1.0);
+  let sigWidth = foundPos ? foundPos.textWidth * 1.1 : 140; // 10% wider than text for flair
+  let sigHeight = (sigDims.height / sigDims.width) * sigWidth;
   
+  // Cap dimensions to prevent overflow on very small/large text
+  const MAX_SIG_HEIGHT = 80;
+  if (sigHeight > MAX_SIG_HEIGHT) {
+    sigHeight = MAX_SIG_HEIGHT;
+    sigWidth = (sigDims.width / sigDims.height) * sigHeight;
+  }
+
   // Default fallback position
   let x = pageWidth / 2 - sigWidth / 2;
   let y = 100;
 
   if (foundPos) {
     // Center signature over the found text horizontally
-    // Offset Y slightly upward from the text baseline
     x = foundPos.x + (foundPos.textWidth / 2) - (sigWidth / 2);
-    y = foundPos.y + 5; 
+    
+    // Position strictly ABOVE the text
+    // foundPos.y is the baseline, we add textHeight to clear the characters
+    y = foundPos.y + foundPos.textHeight + 2; 
 
-    // Ensure it stays on the page
-    x = Math.max(20, Math.min(x, pageWidth - sigWidth - 20));
-    y = Math.max(20, Math.min(y, pageHeight - sigHeight - 20));
+    // Safety bounds checking
+    x = Math.max(10, Math.min(x, pageWidth - sigWidth - 10));
+    y = Math.max(10, Math.min(y, pageHeight - sigHeight - 10));
   }
 
   page.drawImage(signatureImg, {
