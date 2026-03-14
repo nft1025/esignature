@@ -45,11 +45,11 @@ OR
 The "NAME" is usually on the line immediately following the keyword like "SIGNED BY" or "APPROVED BY".
 
 Instructions:
-1. Ignore "Date" or "To:" or "From:" headers at the top of the document.
-2. Look for keywords: "SIGNED BY", "APPROVED BY", "FOR APPROVAL", "SIGNATURE OF".
-3. Extract the name that appears directly under these keywords. 
+1. Ignore "Date", "To:", "From:", "Subject:", reference headers, and other headers at the top of the document.
+2. Look for these signature-related keywords: "SIGNED BY", "APPROVED BY", "FOR APPROVAL", "SIGNATURE OF", "REGARDS", "SIGNATURE", "SIGNATURE LINE", "SIGNED", "SIGN HERE", "AUTHORIZED SIGNATURE", "APPLICANT SIGNATURE", "EMPLOYEE SIGNATURE", "CLIENT SIGNATURE", "WITNESS SIGNATURE", "NOTED BY", "VERIFIED BY", "CHECKED BY", "CERTIFIED BY", "AUTHORIZED BY", "ENDORSED BY", "RECOMMENDED BY", "CONFIRMED BY", "VALIDATED BY", "BEST REGARDS", "KIND REGARDS", "SINCERELY", "SINCERELY YOURS", "RESPECTFULLY", "YOURS TRULY", "VERY TRULY YOURS", "PREPARED BY", "RECEIVED BY", "REVIEWED BY", "SUBMITTED BY", "ACKNOWLEDGED BY", "ATTESTED BY", "APPROVED AND SIGNED BY", "AUTHORIZED REPRESENTATIVE", "NAME AND SIGNATURE", "PRINTED NAME AND SIGNATURE", "SIGNATURE OVER PRINTED NAME", "SIGNATURE AND DATE", "SIGNATORY", "DATE SIGNED", "SIGNED THIS DAY OF".
+3. Extract the full name directly under, immediately after, or clearly associated with these keywords.
 4. If a specific signatoryName is provided ("{{{signatoryName}}}"), look for exactly that name in a signature area.
-5. Return the full name as 'detectedPlacementText'.
+5. Return only the full name as 'detectedPlacementText'.
 
 Document Text:
 ---
