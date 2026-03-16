@@ -197,10 +197,10 @@ export default function QuickSign() {
           <DialogHeader className="p-4 border-b bg-white">
             <DialogTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5 text-primary" />
-              {previewFile?.file.name}
+              {previewFile?.file.name || "Document Preview"}
             </DialogTitle>
             <DialogDescription>
-              Previewing {previewFile?.file.name} for signature verification.
+              Previewing {previewFile?.file.name || "selected file"} for signature verification.
             </DialogDescription>
           </DialogHeader>
           <div className="flex-1 bg-muted relative">
