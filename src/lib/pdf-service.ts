@@ -1,4 +1,3 @@
-
 import * as pdfjsLib from 'pdfjs-dist';
 import { PDFDocument } from 'pdf-lib';
 
@@ -32,7 +31,7 @@ function fuzzyNameMatch(docText: string, targetName: string): boolean {
 
 export async function extractPdfText(file: File): Promise<string> {
   const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
   let fullText = '';
 
   for (let i = 1; i <= pdf.numPages; i++) {
@@ -51,16 +50,15 @@ export async function signPdf(
   targetTexts: string[]
 ): Promise<Uint8Array> {
   const arrayBuffer = await file.arrayBuffer();
-  const pdfLibBytes = new Uint8Array(arrayBuffer.slice(0));
-  const pdfJsBytes = new Uint8Array(arrayBuffer.slice(0));
+  // Create separate buffers for PDF.js and pdf-lib
+  const pdfJsDoc = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer.slice(0)) }).promise;
+  const pdfDoc = await PDFDocument.load(new Uint8Array(arrayBuffer.slice(0)));
   
-  const pdfJsDoc = await pdfjsLib.getDocument({ data: pdfJsBytes }).promise;
-  const pdfDoc = await PDFDocument.load(pdfLibBytes);
   const signatureImageBytes = await fetch(signatureImage).then((res) => res.arrayBuffer());
   const signatureImg = await pdfDoc.embedPng(signatureImageBytes);
   const pages = pdfDoc.getPages();
 
-  // If no targets found, we do NOT sign randomly. We only sign if explicitly requested or if we find something.
+  // If no targets found, return original
   if (targetTexts.length === 0) {
     return await pdfDoc.save();
   }
@@ -68,30 +66,30 @@ export async function signPdf(
   for (const target of targetTexts) {
     let foundPos: { pageIndex: number; x: number; y: number; textWidth: number; textHeight: number } | null = null;
 
-    // SEARCH BOTTOM-UP: Start from the last page
+    // SEARCH BOTTOM-UP: Start from the last page to find official signature blocks
     for (let i = pdfJsDoc.numPages; i >= 1; i--) {
       const page = await pdfJsDoc.getPage(i);
       const content = await page.getTextContent();
       
-      for (let j = content.items.length - 1; j >= 0; j--) {
-        const item = content.items[j] as any;
+      // Look for the signatory name item
+      const item = content.items.find((item: any) => {
         const itemStr = (item.str || "").trim();
-        
-        if (itemStr.length > 2 && fuzzyNameMatch(itemStr, target)) {
-          foundPos = {
-            pageIndex: i - 1,
-            x: item.transform[4],
-            y: item.transform[5],
-            textWidth: item.width || 100,
-            textHeight: Math.abs(item.transform[3]) || 12 
-          };
-          break;
-        }
+        return itemStr.length > 2 && fuzzyNameMatch(itemStr, target);
+      }) as any;
+
+      if (item && item.transform) {
+        foundPos = {
+          pageIndex: i - 1,
+          x: item.transform[4],
+          y: item.transform[5],
+          textWidth: item.width || 100,
+          textHeight: Math.abs(item.transform[3]) || 12 
+        };
+        break;
       }
-      if (foundPos) break;
     }
 
-    if (!foundPos) continue; // Skip if we can't find the coordinates for this target
+    if (!foundPos) continue;
 
     const page = pages[foundPos.pageIndex];
     const { width: pageWidth, height: pageHeight } = page.getSize();
@@ -109,11 +107,11 @@ export async function signPdf(
       sigWidth = (sigDims.width / sigDims.height) * sigHeight;
     }
 
-    // Centering and Overlap
+    // Centering and Overlap: 45% overlap with name for natural appearance
     let x = foundPos.x + (foundPos.textWidth / 2) - (sigWidth / 2);
-    let y = foundPos.y - (sigHeight * 0.45); // Overlap with name baseline
+    let y = foundPos.y - (sigHeight * 0.45); 
     
-    // Bounds check
+    // Bounds check to keep signature on paper
     x = Math.max(20, Math.min(x, pageWidth - sigWidth - 20));
     y = Math.max(20, Math.min(y, pageHeight - sigHeight - 20));
 
