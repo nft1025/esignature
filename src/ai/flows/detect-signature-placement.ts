@@ -30,19 +30,19 @@ const prompt = ai.definePrompt({
   name: 'detectSignaturePlacementPrompt',
   input: { schema: DetectSignaturePlacementInputSchema },
   output: { schema: DetectSignaturePlacementOutputSchema },
-  prompt: `You are a document specialist. Your task is to identify where signatures are required in a document text.
+  prompt: `You are a strict document analysis agent. Your ONLY task is to identify specific signature lines in the provided text.
 
-Look for signature blocks featuring keywords like "SIGNED BY", "APPROVED BY", "NAME", "SIGNATURE", etc.
-
-Instructions:
-1. If a specific signatoryName is provided ("{{{signatoryName}}}"), find the text that most closely matches this name in a signature context. 
-   - Note: The name in the document might have middle initials (e.g., "John M. Doe") even if the input is "John Doe".
-   - Return the EXACT string of the name as it appears in the provided document text.
-   - Return ONLY that one string in the 'detectedPlacements' array.
-2. If no signatoryName is provided, find ALL people who appear to be signatories (e.g., names listed under "APPROVED BY", "WITNESS", "CLIENT", "PREPARED BY").
-3. Return an array of these strings as 'detectedPlacements'.
-
-Keywords to help identify signature blocks: "SIGNED BY", "APPROVED BY", "FOR APPROVAL", "SIGNATURE OF", "REGARDS", "SIGNATURE LINE", "AUTHORIZED SIGNATURE", "APPLICANT SIGNATURE", "EMPLOYEE SIGNATURE", "CLIENT SIGNATURE", "WITNESS SIGNATURE", "NOTED BY", "VERIFIED BY", "CHECKED BY", "CERTIFIED BY", "AUTHORIZED BY", "ENDORSED BY", "RECOMMENDED BY", "CONFIRMED BY", "VALIDATED BY", "BEST REGARDS", "KIND REGARDS", "SINCERELY", "RESPECTFULLY", "PREPARED BY", "RECEIVED BY", "REVIEWED BY", "SUBMITTED BY", "ACKNOWLEDGED BY", "ATTESTED BY", "AUTHORIZED REPRESENTATIVE", "SIGNATORY".
+RULES FOR DETECTION:
+1. IGNORE HEADERS AND SALUTATIONS: Never return names from address blocks, headers, or greetings (e.g., "Dear Mr. [Name]").
+2. FOCUS ON SIGNATURE BLOCKS: Only look for names appearing after "SIGNED BY", "APPROVED BY", "SIGNATURE:", "AUTHORIZED SIGNATORY", or at the very end of the document after "Sincerely" or "Regards".
+3. STRICT PRIORITY FILTERING:
+   - If a signatoryName IS PROVIDED ("{{{signatoryName}}}"):
+     - You MUST ONLY return a name from the document that is a semantic match for "{{{signatoryName}}}".
+     - A match includes variations with middle initials or different casing.
+     - IF NO SEMANTIC MATCH IS FOUND, RETURN AN EMPTY ARRAY []. DO NOT SUBSTITUTE WITH ANOTHER NAME.
+     - Return the EXACT string of the name as it appears in the document text.
+   - If NO signatoryName IS PROVIDED:
+     - Detect all primary signatories at the end of the document.
 
 Document Text:
 ---
@@ -60,9 +60,24 @@ const detectSignaturePlacementFlow = ai.defineFlow(
   },
   async (input) => {
     const { output } = await prompt(input);
-    if (!output) {
+    if (!output || !output.detectedPlacements) {
       return { detectedPlacements: [] };
     }
+
+    // Programmatic safety filter: If a priority name is provided, verify the AI output
+    if (input.signatoryName) {
+      const priority = input.signatoryName.toLowerCase().trim();
+      const priorityWords = priority.split(/\s+/).filter(w => w.length > 1);
+      
+      const filtered = output.detectedPlacements.filter(detectedName => {
+        const detectedNorm = detectedName.toLowerCase().trim();
+        // Ensure ALL major words from the priority input are present in the detected name
+        return priorityWords.every(word => detectedNorm.includes(word));
+      });
+
+      return { detectedPlacements: filtered.slice(0, 1) };
+    }
+
     return output;
   }
 );
