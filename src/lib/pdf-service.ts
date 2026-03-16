@@ -14,7 +14,8 @@ function normalizeForMatch(s: string): string {
 }
 
 /**
- * Checks if a target name (from AI) matches text found in a PDF line.
+ * Checks if a target name (from AI) matches text found in a PDF segment.
+ * Uses whole-word matching to avoid partial overlaps.
  */
 function fuzzyNameMatch(docText: string, targetName: string): boolean {
   const docNorm = normalizeForMatch(docText);
@@ -25,11 +26,16 @@ function fuzzyNameMatch(docText: string, targetName: string): boolean {
   // Exact match after normalization
   if (docNorm === targetNorm) return true;
   
-  // Word-based verification: All words in target must be found in doc segment
+  // Word-based verification: All words in target must be found as whole words in doc segment
   const targetWords = targetNorm.split(' ').filter(w => w.length >= 1);
   if (targetWords.length === 0) return false;
   
-  return targetWords.every(tw => docNorm.includes(tw));
+  return targetWords.every(tw => {
+    // Escape word for regex and check for word boundaries
+    const escaped = tw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+    return regex.test(docNorm);
+  });
 }
 
 export async function extractPdfText(file: File): Promise<string> {
@@ -76,8 +82,8 @@ export async function signPdf(
       for (const item of content.items as any[]) {
         if (!item.str.trim()) continue; 
         const y = Math.round(item.transform[5]);
-        // Use tolerance for messy layouts
-        let matchedY = Array.from(linesMap.keys()).find(existingY => Math.abs(existingY - y) < 8);
+        // Use tolerance for messy layouts (standard line height usually 10-14pt)
+        let matchedY = Array.from(linesMap.keys()).find(existingY => Math.abs(existingY - y) < 10);
         if (matchedY !== undefined) {
           linesMap.get(matchedY)!.push(item);
         } else {
@@ -85,31 +91,46 @@ export async function signPdf(
         }
       }
 
-      // Sort Y coordinates to iterate lines (bottom to top for signature priority)
+      // Sort Y coordinates to iterate lines
       const sortedYs = Array.from(linesMap.keys()).sort((a, b) => a - b);
 
       for (const y of sortedYs) {
         const lineItems = linesMap.get(y)!;
         lineItems.sort((a, b) => a.transform[4] - b.transform[4]);
 
-        // Sliding window to find the exact name segment in the line
+        // Double sliding window to find the tightest segment that matches the name
+        // This is crucial for side-by-side columns
         for (let start = 0; start < lineItems.length; start++) {
           for (let end = start + 1; end <= lineItems.length; end++) {
             const segment = lineItems.slice(start, end);
             const segmentText = segment.map(it => it.str).join(" ");
             
             if (fuzzyNameMatch(segmentText, target)) {
-              // Ensure we didn't capture too much (like side-by-side names in one window)
-              // If we find a match, check if a smaller window also matches
-              let bestSegment = segment;
-              for (let innerEnd = start + 1; innerEnd < end; innerEnd++) {
-                const sub = lineItems.slice(start, innerEnd);
+              // Found a match. Now shrink it from both ends to find the tightest horizontal span.
+              let tightStart = start;
+              let tightEnd = end;
+
+              // Shrink from left
+              while (tightStart < tightEnd - 1) {
+                const sub = lineItems.slice(tightStart + 1, tightEnd);
                 if (fuzzyNameMatch(sub.map(it => it.str).join(" "), target)) {
-                  bestSegment = sub;
+                  tightStart++;
+                } else {
                   break;
                 }
               }
 
+              // Shrink from right
+              while (tightEnd > tightStart + 1) {
+                const sub = lineItems.slice(tightStart, tightEnd - 1);
+                if (fuzzyNameMatch(sub.map(it => it.str).join(" "), target)) {
+                  tightEnd--;
+                } else {
+                  break;
+                }
+              }
+
+              const bestSegment = lineItems.slice(tightStart, tightEnd);
               const firstItem = bestSegment[0];
               const lastItem = bestSegment[bestSegment.length - 1];
               
@@ -148,7 +169,7 @@ export async function signPdf(
       const MAX_WIDTH = 130; 
       const MAX_HEIGHT = 60;  
       
-      let sigWidth = Math.min(MAX_WIDTH, Math.max(80, foundPos.textWidth * 1.2));
+      let sigWidth = Math.min(MAX_WIDTH, Math.max(85, foundPos.textWidth * 1.3));
       let sigHeight = (sigDims.height / sigDims.width) * sigWidth;
       
       if (sigHeight > MAX_HEIGHT) {
@@ -156,12 +177,12 @@ export async function signPdf(
         sigWidth = (sigDims.width / sigDims.height) * sigHeight;
       }
 
-      // 1. HORIZONTAL: Center exactly over the detected name's horizontal span
+      // HORIZONTAL: Center exactly over the detected name's specific horizontal span
       let x = foundPos.x + (foundPos.textWidth / 2) - (sigWidth / 2);
       
-      // 2. VERTICAL: Overlap with the middle of the name as requested.
-      // foundPos.y is the text baseline. We want the sig center to be around the text center.
-      // Text center is baseline + (height / 2).
+      // VERTICAL: Overlap with the middle of the name as requested.
+      // Text center is baseline + (height / 2). 
+      // We align the signature center to the text center.
       let textCenterY = foundPos.y + (foundPos.textHeight / 2);
       let y = textCenterY - (sigHeight / 2); 
       
@@ -184,7 +205,7 @@ export async function signPdf(
     const lastPage = pages[pages.length - 1];
     const { width, height } = lastPage.getSize();
     lastPage.drawImage(signatureImg, {
-      x: width - 170,
+      x: width - 180,
       y: 80,
       width: 140,
       height: 65,
