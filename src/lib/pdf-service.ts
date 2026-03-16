@@ -23,13 +23,12 @@ function fuzzyNameMatch(docText: string, targetName: string): boolean {
   if (!docNorm || !targetNorm) return false;
   
   // Exact match after normalization
-  if (docNorm === targetNorm || docNorm.includes(targetNorm)) return true;
+  if (docNorm === targetNorm) return true;
   
-  // Word-based verification
+  // Word-based verification: All words in target must be found in doc segment
   const targetWords = targetNorm.split(' ').filter(w => w.length >= 1);
   if (targetWords.length === 0) return false;
   
-  // All words in target must be found in doc segment in order
   return targetWords.every(tw => docNorm.includes(tw));
 }
 
@@ -77,8 +76,8 @@ export async function signPdf(
       for (const item of content.items as any[]) {
         if (!item.str.trim()) continue; 
         const y = Math.round(item.transform[5]);
-        // Use a slightly larger tolerance for messy layouts
-        let matchedY = Array.from(linesMap.keys()).find(existingY => Math.abs(existingY - y) < 10);
+        // Use tolerance for messy layouts
+        let matchedY = Array.from(linesMap.keys()).find(existingY => Math.abs(existingY - y) < 8);
         if (matchedY !== undefined) {
           linesMap.get(matchedY)!.push(item);
         } else {
@@ -93,22 +92,31 @@ export async function signPdf(
         const lineItems = linesMap.get(y)!;
         lineItems.sort((a, b) => a.transform[4] - b.transform[4]);
 
-        // Sliding window to find the name in the line, supports multiple names in one line (columns)
+        // Sliding window to find the exact name segment in the line
         for (let start = 0; start < lineItems.length; start++) {
           for (let end = start + 1; end <= lineItems.length; end++) {
             const segment = lineItems.slice(start, end);
             const segmentText = segment.map(it => it.str).join(" ");
             
             if (fuzzyNameMatch(segmentText, target)) {
-              const firstItem = segment[0];
-              const lastItem = segment[segment.length - 1];
+              // Ensure we didn't capture too much (like side-by-side names in one window)
+              // If we find a match, check if a smaller window also matches
+              let bestSegment = segment;
+              for (let innerEnd = start + 1; innerEnd < end; innerEnd++) {
+                const sub = lineItems.slice(start, innerEnd);
+                if (fuzzyNameMatch(sub.map(it => it.str).join(" "), target)) {
+                  bestSegment = sub;
+                  break;
+                }
+              }
+
+              const firstItem = bestSegment[0];
+              const lastItem = bestSegment[bestSegment.length - 1];
               
-              // Width calculation needs to account for the width property reported by pdfjs
               const startX = firstItem.transform[4];
               const endX = lastItem.transform[4] + (lastItem.width || 0);
               const totalWidth = endX - startX;
               
-              // Detect font size
               const fontSize = Math.max(
                 Math.abs(firstItem.transform[0]), 
                 Math.abs(firstItem.transform[3]), 
@@ -137,11 +145,10 @@ export async function signPdf(
       const { width: pageWidth, height: pageHeight } = page.getSize();
       
       const sigDims = signatureImg.scale(1.0);
-      const MAX_WIDTH = 150; 
-      const MAX_HEIGHT = 70;  
+      const MAX_WIDTH = 130; 
+      const MAX_HEIGHT = 60;  
       
-      // Scale signature to be slightly wider than the detected text for natural look
-      let sigWidth = Math.min(MAX_WIDTH, Math.max(90, foundPos.textWidth * 1.3));
+      let sigWidth = Math.min(MAX_WIDTH, Math.max(80, foundPos.textWidth * 1.2));
       let sigHeight = (sigDims.height / sigDims.width) * sigWidth;
       
       if (sigHeight > MAX_HEIGHT) {
@@ -149,13 +156,14 @@ export async function signPdf(
         sigWidth = (sigDims.width / sigDims.height) * sigHeight;
       }
 
-      // Horizontally center over the name segment
+      // 1. HORIZONTAL: Center exactly over the detected name's horizontal span
       let x = foundPos.x + (foundPos.textWidth / 2) - (sigWidth / 2);
       
-      // Vertical placement: Overlap slightly with the name. 
-      // PDF Y is bottom-up. foundPos.y is the text baseline.
-      // Move up by a small fraction of text height to sit right on/above it.
-      let y = foundPos.y + (foundPos.textHeight * 0.15); 
+      // 2. VERTICAL: Overlap with the middle of the name as requested.
+      // foundPos.y is the text baseline. We want the sig center to be around the text center.
+      // Text center is baseline + (height / 2).
+      let textCenterY = foundPos.y + (foundPos.textHeight / 2);
+      let y = textCenterY - (sigHeight / 2); 
       
       // Boundary constraints
       x = Math.max(5, Math.min(x, pageWidth - sigWidth - 5));
@@ -171,7 +179,7 @@ export async function signPdf(
     }
   }
 
-  // Fallback placement if AI detected names but coordinates couldn't be resolved
+  // Fallback placement if nothing matched coordinates
   if (totalPlacements === 0 && targetTexts.length > 0) {
     const lastPage = pages[pages.length - 1];
     const { width, height } = lastPage.getSize();
