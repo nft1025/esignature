@@ -28,8 +28,8 @@ const prompt = ai.definePrompt({
   prompt: `You are a professional document analysis agent. Your task is to identify formal signature blocks in the provided text.
 
 RULES:
-1. FOCUS ON SIGNATURE BLOCKS: Look for names appearing under or near phrases like "APPROVED BY:", "SIGNED BY:", "Signature:", "Signatory:", or at the end of the document.
-2. SIDE-BY-SIDE SUPPORT: Be aware that two names might appear on the same line or in parallel columns. Return each unique name found.
+1. FOCUS ON SIGNATURE BLOCKS: Look for names appearing under or near headers like "APPROVED BY:", "SIGNED BY:", "REQUESTED BY:", "ENDORSED BY:", "Signature:", "Signatory:", or at the end of the document.
+2. SIDE-BY-SIDE SUPPORT: Be aware that multiple names might appear on the same line (columns). Identify all such names.
 3. IGNORE HEADERS: Never return names from letterheads, address blocks, or standard header information.
 4. PRIORITY SIGNATORY:
    - If signatoryName is provided ("{{{signatoryName}}}"), you MUST ONLY return that name (or the exact version of it found in the text).
@@ -64,9 +64,14 @@ const detectSignaturePlacementFlow = ai.defineFlow(
         
         const filtered = output.detectedPlacements.filter(detectedName => {
           const detectedNorm = detectedName.toLowerCase().trim();
+          // If priority is very short (like "Stanley Co"), use a more lenient word-based match
+          if (priorityWords.length < 2) {
+             return detectedNorm.includes(priority);
+          }
           return priorityWords.every(word => detectedNorm.includes(word));
         });
 
+        // Return the first valid match found
         return { detectedPlacements: filtered.slice(0, 1) };
       }
 
