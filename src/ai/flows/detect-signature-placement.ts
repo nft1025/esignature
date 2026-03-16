@@ -30,10 +30,10 @@ const prompt = ai.definePrompt({
 RULES:
 1. FOCUS ON SIGNATURE BLOCKS: Look for names or entities (like "Stanley Co.") appearing under headers like "APPROVED BY:", "SIGNED BY:", "REQUESTED BY:", "ENDORSED BY:", "Signature:", "Signatory:", or at the very end of the document.
 2. SIDE-BY-SIDE SUPPORT: Be aware that multiple names might appear on the same line (columns). Identify all such names.
-3. ENTITY SUPPORT: Signatories can be people or companies (e.g., "Stanley Co.").
+3. ENTITY SUPPORT: Signatories can be people or companies (e.g., "Stanley Co."). Do not ignore them if they are in a signature area.
 4. IGNORE HEADERS: Never return names from letterheads, address blocks, or standard header information at the top of pages.
 5. PRIORITY SIGNATORY:
-   - If signatoryName is provided ("{{{signatoryName}}}"), you MUST ONLY return that specific name/entity as found in the text.
+   - If signatoryName is provided ("{{{signatoryName}}}"), you MUST ONLY return that specific name/entity if it is found in a signature context.
    - If that name is NOT found in a signature context, return an empty array [].
 6. FORMAT: Return only the names, exactly as they appear in the text.
 
@@ -64,7 +64,7 @@ const detectSignaturePlacementFlow = ai.defineFlow(
         
         const filtered = output.detectedPlacements.filter(detectedName => {
           const detectedNorm = detectedName.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
-          // Basic substring check for robustness against middle initials or trailing punctuation
+          // Robust entity matching for names like "Stanley Co"
           return detectedNorm.includes(priority) || priority.includes(detectedNorm);
         });
 
