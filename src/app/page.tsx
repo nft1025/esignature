@@ -8,12 +8,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { FilePlus, PenTool, LayoutDashboard, ShieldCheck, Files, FileText, User, Search } from 'lucide-react';
+import { FilePlus, PenTool, LayoutDashboard, ShieldCheck, Files, FileText, User, Search, CheckCircle2, X } from 'lucide-react';
 import { Toaster } from '@/components/ui/toaster';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 
 export default function QuickSign() {
   const [signatureImage, setSignatureImage] = useState<string | null>(null);
   const [signatoryName, setSignatoryName] = useState<string>('');
+  const [confirmedSignatory, setConfirmedSignatory] = useState<string>('');
   const [documents, setDocuments] = useState<File[]>([]);
   const [previewFile, setPreviewFile] = useState<{file: File, url: string} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -31,6 +33,15 @@ export default function QuickSign() {
   const openPreview = (file: File) => {
     const url = URL.createObjectURL(file);
     setPreviewFile({ file, url });
+  };
+
+  const handleConfirmSignatory = () => {
+    setConfirmedSignatory(signatoryName.trim());
+  };
+
+  const clearConfirmedSignatory = () => {
+    setConfirmedSignatory('');
+    setSignatoryName('');
   };
 
   return (
@@ -61,7 +72,7 @@ export default function QuickSign() {
           <div className="lg:col-span-4 space-y-6">
             <SignatureUploader onSignatureUpload={setSignatureImage} />
             
-            <Card className="bg-white/50 backdrop-blur-sm">
+            <Card className="bg-white/50 backdrop-blur-sm relative overflow-hidden">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <User className="w-5 h-5 text-primary" />
@@ -72,24 +83,43 @@ export default function QuickSign() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <Label htmlFor="signatory-name" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Signatory Name (Optional)
                   </Label>
-                  <div className="relative">
-                    <Input 
-                      id="signatory-name"
-                      placeholder="e.g. John Doe" 
-                      value={signatoryName}
-                      onChange={(e) => setSignatoryName(e.target.value)}
-                      className="pl-9"
-                    />
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Input 
+                        id="signatory-name"
+                        placeholder="e.g. Neil Teresa" 
+                        value={signatoryName}
+                        onChange={(e) => setSignatoryName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleConfirmSignatory()}
+                        className="pl-9"
+                        disabled={!!confirmedSignatory}
+                      />
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    </div>
+                    {confirmedSignatory ? (
+                      <Button variant="outline" size="icon" onClick={clearConfirmedSignatory} className="shrink-0 border-destructive/20 text-destructive hover:bg-destructive/10">
+                        <X className="w-4 h-4" />
+                      </Button>
+                    ) : (
+                      <Button onClick={handleConfirmSignatory} size="sm" className="shrink-0">Set</Button>
+                    )}
                   </div>
-                  <p className="text-[10px] text-muted-foreground leading-relaxed mt-2">
-                    {signatoryName 
-                      ? `AI will prioritize signing for "${signatoryName}".` 
-                      : "Leave blank to automatically detect and sign all signatory areas found in the documents."}
+                  
+                  {confirmedSignatory && (
+                    <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-100 rounded-lg text-green-700 text-xs font-medium animate-in fade-in slide-in-from-top-1">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      Priority set for: {confirmedSignatory}
+                    </div>
+                  )}
+
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">
+                    {confirmedSignatory 
+                      ? "AI is now searching for this exact signatory. Matches include variations with initials and different casing." 
+                      : "Leave blank or type a name and press Enter to automatically detect and sign all signatory areas found."}
                   </p>
                 </div>
               </CardContent>
@@ -152,7 +182,7 @@ export default function QuickSign() {
                     key={`${file.name}-${index}`} 
                     file={file} 
                     signatureImage={signatureImage}
-                    prioritySignatory={signatoryName}
+                    prioritySignatory={confirmedSignatory}
                     onRemove={() => removeDocument(index)}
                     onPreview={() => openPreview(file)}
                   />
@@ -163,7 +193,6 @@ export default function QuickSign() {
         </div>
       </main>
 
-      {/* PDF Preview Modal */}
       <Dialog open={!!previewFile} onOpenChange={() => setPreviewFile(null)}>
         <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 overflow-hidden">
           <div className="p-4 border-b flex items-center justify-between bg-white">
@@ -191,6 +220,3 @@ export default function QuickSign() {
     </div>
   );
 }
-
-import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { X } from 'lucide-react';
