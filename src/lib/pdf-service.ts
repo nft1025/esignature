@@ -21,9 +21,11 @@ function fuzzyNameMatch(docText: string, targetName: string): boolean {
   
   if (!docNorm || !targetNorm) return false;
   
-  if (docNorm.includes(targetNorm)) return true;
+  // Exact match after normalization
+  if (docNorm === targetNorm || docNorm.includes(targetNorm)) return true;
   
-  const targetWords = targetNorm.split(' ').filter(w => w.length >= 2);
+  // Partial word match (e.g., "Stanley Co" matches "Stanley Co.")
+  const targetWords = targetNorm.split(' ').filter(w => w.length >= 1);
   if (targetWords.length === 0) return false;
   
   return targetWords.every(tw => docNorm.includes(tw));
@@ -58,21 +60,22 @@ export async function signPdf(
 
   const pdfJsDoc = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
 
-  let placementsCount = 0;
+  let totalPlacements = 0;
 
   for (const target of targetTexts) {
     let foundPos: { pageIndex: number; x: number; y: number; textWidth: number; textHeight: number } | null = null;
 
-    // Search from bottom pages to top for signature areas
+    // Search pages from end to start (usually signatures are at the end)
     for (let i = pdfJsDoc.numPages; i >= 1; i--) {
       const page = await pdfJsDoc.getPage(i);
       const content = await page.getTextContent();
       
+      // Group items into lines based on Y coordinate with tolerance
       const linesMap = new Map<number, any[]>();
       for (const item of content.items as any[]) {
         if (!item.str.trim()) continue; 
         const y = Math.round(item.transform[5]);
-        let matchedY = Array.from(linesMap.keys()).find(existingY => Math.abs(existingY - y) < 10);
+        let matchedY = Array.from(linesMap.keys()).find(existingY => Math.abs(existingY - y) < 8);
         if (matchedY !== undefined) {
           linesMap.get(matchedY)!.push(item);
         } else {
@@ -80,15 +83,14 @@ export async function signPdf(
         }
       }
 
-      // Check lines from bottom to top
+      // Sort Y coordinates to iterate lines (bottom to top for signature priority)
       const sortedYs = Array.from(linesMap.keys()).sort((a, b) => a - b);
 
       for (const y of sortedYs) {
         const lineItems = linesMap.get(y)!;
         lineItems.sort((a, b) => a.transform[4] - b.transform[4]);
 
-        // To support side-by-side names, we look for matches within sub-ranges of the line
-        // We'll try to find which specific items in the line match our target
+        // Sliding window to find the name in the line, supporting side-by-side signatories
         for (let start = 0; start < lineItems.length; start++) {
           for (let end = start + 1; end <= lineItems.length; end++) {
             const segment = lineItems.slice(start, end);
@@ -97,15 +99,17 @@ export async function signPdf(
             if (fuzzyNameMatch(segmentText, target)) {
               const firstItem = segment[0];
               const lastItem = segment[segment.length - 1];
+              // Calculate total width of the segment
               const totalWidth = (lastItem.transform[4] + (lastItem.width || 0)) - firstItem.transform[4];
-              const textHeight = Math.abs(firstItem.transform[3]) || 12;
+              // Use font size from transform matrix (usually index 0 or 3)
+              const fontSize = Math.abs(firstItem.transform[0]) || Math.abs(firstItem.transform[3]) || 12;
 
               foundPos = {
                 pageIndex: i - 1,
                 x: firstItem.transform[4],
                 y: y,
                 textWidth: totalWidth,
-                textHeight: textHeight
+                textHeight: fontSize
               };
               break;
             }
@@ -122,10 +126,11 @@ export async function signPdf(
       const { width: pageWidth, height: pageHeight } = page.getSize();
       
       const sigDims = signatureImg.scale(1.0);
-      const MAX_WIDTH = 150; 
-      const MAX_HEIGHT = 70;  
+      const MAX_WIDTH = 140; 
+      const MAX_HEIGHT = 65;  
       
-      let sigWidth = Math.min(MAX_WIDTH, foundPos.textWidth * 1.5);
+      // Scale signature based on text width but within limits
+      let sigWidth = Math.min(MAX_WIDTH, Math.max(80, foundPos.textWidth * 1.2));
       let sigHeight = (sigDims.height / sigDims.width) * sigWidth;
       
       if (sigHeight > MAX_HEIGHT) {
@@ -133,11 +138,14 @@ export async function signPdf(
         sigWidth = (sigDims.width / sigDims.height) * sigHeight;
       }
 
-      // Placement logic: Center horizontally over the name.
-      // Vertical: PDF Y is baseline. Move up by text height plus a small gap to place ABOVE name.
+      // Horizontally center over the name
       let x = foundPos.x + (foundPos.textWidth / 2) - (sigWidth / 2);
-      let y = foundPos.y + (foundPos.textHeight * 0.5); // Start slightly above the baseline to overlap or sit on the line
+      // Vertically place it so it overlaps slightly above the name
+      // PDF Y is bottom-up. foundPos.y is the baseline. 
+      // Moving up by 15-20% of sigHeight to create overlap as requested.
+      let y = foundPos.y + (foundPos.textHeight * 0.1); 
       
+      // Constraints to keep signature on page
       x = Math.max(10, Math.min(x, pageWidth - sigWidth - 10));
       y = Math.max(10, Math.min(y, pageHeight - sigHeight - 10));
 
@@ -147,18 +155,18 @@ export async function signPdf(
         width: sigWidth,
         height: sigHeight,
       });
-      placementsCount++;
+      totalPlacements++;
     }
   }
 
-  // Fallback if no specific coordinates found
-  if (placementsCount === 0 && targetTexts.length > 0) {
+  // Fallback to last page bottom right if no match found
+  if (totalPlacements === 0 && targetTexts.length > 0) {
     const lastPage = pages[pages.length - 1];
     const { width, height } = lastPage.getSize();
     lastPage.drawImage(signatureImg, {
-      x: width - 180,
-      y: 80,
-      width: 140,
+      x: width - 160,
+      y: 100,
+      width: 130,
       height: 60,
     });
   }
