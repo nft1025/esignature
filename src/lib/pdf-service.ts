@@ -6,8 +6,7 @@ if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
 }
 
 /**
- * Checks if two name strings match, ignoring case, extra whitespace, 
- * and allowing for differences like middle initials.
+ * Checks if a line of text matches the target name, handling middle initials and casing.
  */
 function fuzzyNameMatch(docText: string, targetName: string): boolean {
   const normalize = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '');
@@ -17,21 +16,19 @@ function fuzzyNameMatch(docText: string, targetName: string): boolean {
   
   if (!docNorm || !targetNorm) return false;
   
-  // Direct match or inclusion
-  if (docNorm === targetNorm || docNorm.includes(targetNorm) || targetNorm.includes(docNorm)) return true;
+  // Direct inclusion check
+  if (docNorm.includes(targetNorm)) return true;
   
   const targetWords = targetNorm.split(/\s+/).filter(w => w.length >= 2);
-  const docWords = docNorm.split(/\s+/);
-  
   if (targetWords.length === 0) return false;
   
-  // Ensure all major target words exist in the document string
-  return targetWords.every(tw => docWords.some(dw => dw.includes(tw) || tw.includes(dw)));
+  // All significant words of the target must appear in the line
+  return targetWords.every(tw => docNorm.includes(tw));
 }
 
 export async function extractPdfText(file: File): Promise<string> {
   const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   let fullText = '';
 
   for (let i = 1; i <= pdf.numPages; i++) {
@@ -50,15 +47,15 @@ export async function signPdf(
   targetTexts: string[]
 ): Promise<Uint8Array> {
   const arrayBuffer = await file.arrayBuffer();
-  // Create separate buffers for PDF.js and pdf-lib
-  const pdfJsDoc = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer.slice(0)) }).promise;
-  const pdfDoc = await PDFDocument.load(new Uint8Array(arrayBuffer.slice(0)));
+  const pdfLibBytes = new Uint8Array(arrayBuffer.slice(0));
+  const pdfJsBytes = new Uint8Array(arrayBuffer.slice(0));
   
+  const pdfJsDoc = await pdfjsLib.getDocument({ data: pdfJsBytes }).promise;
+  const pdfDoc = await PDFDocument.load(pdfLibBytes);
   const signatureImageBytes = await fetch(signatureImage).then((res) => res.arrayBuffer());
   const signatureImg = await pdfDoc.embedPng(signatureImageBytes);
   const pages = pdfDoc.getPages();
 
-  // If no targets found, return original
   if (targetTexts.length === 0) {
     return await pdfDoc.save();
   }
@@ -66,27 +63,47 @@ export async function signPdf(
   for (const target of targetTexts) {
     let foundPos: { pageIndex: number; x: number; y: number; textWidth: number; textHeight: number } | null = null;
 
-    // SEARCH BOTTOM-UP: Start from the last page to find official signature blocks
+    // SEARCH BOTTOM-UP: Conventional signature area
     for (let i = pdfJsDoc.numPages; i >= 1; i--) {
       const page = await pdfJsDoc.getPage(i);
       const content = await page.getTextContent();
       
-      // Look for the signatory name item
-      const item = content.items.find((item: any) => {
-        const itemStr = (item.str || "").trim();
-        return itemStr.length > 2 && fuzzyNameMatch(itemStr, target);
-      }) as any;
-
-      if (item && item.transform) {
-        foundPos = {
-          pageIndex: i - 1,
-          x: item.transform[4],
-          y: item.transform[5],
-          textWidth: item.width || 100,
-          textHeight: Math.abs(item.transform[3]) || 12 
-        };
-        break;
+      // Group items by Y coordinate to handle split names (e.g. "Aliah" and "Ibardolaza" as separate items)
+      const lines: { y: number; items: any[] }[] = [];
+      for (const item of content.items as any[]) {
+        const y = Math.round(item.transform[5]);
+        let line = lines.find(l => Math.abs(l.y - y) < 4); // 4pt tolerance for same line
+        if (!line) {
+          line = { y, items: [] };
+          lines.push(line);
+        }
+        line.items.push(item);
       }
+
+      // Sort lines bottom-to-top (asc Y)
+      lines.sort((a, b) => a.y - b.y);
+
+      for (const line of lines) {
+        // Sort items in line by X coordinate
+        line.items.sort((a, b) => a.transform[4] - b.transform[4]);
+        const lineText = line.items.map(it => it.str).join(" ");
+
+        if (fuzzyNameMatch(lineText, target)) {
+          const firstItem = line.items[0];
+          const lastItem = line.items[line.items.length - 1];
+          const totalWidth = (lastItem.transform[4] + (lastItem.width || 50)) - firstItem.transform[4];
+          
+          foundPos = {
+            pageIndex: i - 1,
+            x: firstItem.transform[4],
+            y: line.y,
+            textWidth: totalWidth,
+            textHeight: Math.abs(firstItem.transform[3]) || 12 
+          };
+          break;
+        }
+      }
+      if (foundPos) break;
     }
 
     if (!foundPos) continue;
@@ -94,7 +111,7 @@ export async function signPdf(
     const page = pages[foundPos.pageIndex];
     const { width: pageWidth, height: pageHeight } = page.getSize();
     
-    // STANDARD SIZE LOGIC
+    // Standardized Sizing
     const sigDims = signatureImg.scale(1.0);
     const STANDARD_WIDTH = 130; 
     const MAX_SIG_HEIGHT = 60;  
@@ -107,11 +124,11 @@ export async function signPdf(
       sigWidth = (sigDims.width / sigDims.height) * sigHeight;
     }
 
-    // Centering and Overlap: 45% overlap with name for natural appearance
+    // Centering and Natural Overlap on the Name
     let x = foundPos.x + (foundPos.textWidth / 2) - (sigWidth / 2);
     let y = foundPos.y - (sigHeight * 0.45); 
     
-    // Bounds check to keep signature on paper
+    // Safety Bounds
     x = Math.max(20, Math.min(x, pageWidth - sigWidth - 20));
     y = Math.max(20, Math.min(y, pageHeight - sigHeight - 20));
 
