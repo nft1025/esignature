@@ -68,7 +68,7 @@ const detectSignaturePlacementFlow = ai.defineFlow(
           return detectedNorm.includes(priority) || priority.includes(detectedNorm);
         });
 
-        // Return only the first valid priority match
+        // Return only the first valid priority match to avoid duplicate stamping
         return { detectedPlacements: filtered.slice(0, 1) };
       }
 
