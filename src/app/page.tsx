@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { FilePlus, PenTool, LayoutDashboard, ShieldCheck, Files, FileText, User, Search, CheckCircle2, X } from 'lucide-react';
 import { Toaster } from '@/components/ui/toaster';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 export default function QuickSign() {
   const [signatureImage, setSignatureImage] = useState<string | null>(null);
@@ -194,15 +194,15 @@ export default function QuickSign() {
 
       <Dialog open={!!previewFile} onOpenChange={() => setPreviewFile(null)}>
         <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 overflow-hidden">
-          <div className="p-4 border-b flex items-center justify-between bg-white">
-            <h3 className="font-bold flex items-center gap-2">
+          <DialogHeader className="p-4 border-b bg-white">
+            <DialogTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5 text-primary" />
               {previewFile?.file.name}
-            </h3>
-            <Button variant="ghost" size="icon" onClick={() => setPreviewFile(null)}>
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
+            </DialogTitle>
+            <DialogDescription>
+              Previewing {previewFile?.file.name} for signature verification.
+            </DialogDescription>
+          </DialogHeader>
           <div className="flex-1 bg-muted relative">
             {previewFile && (
               <iframe 
