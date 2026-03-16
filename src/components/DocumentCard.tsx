@@ -13,11 +13,12 @@ import { useToast } from '@/hooks/use-toast';
 interface DocumentCardProps {
   file: File;
   signatureImage: string | null;
+  prioritySignatory: string;
   onRemove: () => void;
   onPreview: () => void;
 }
 
-export function DocumentCard({ file, signatureImage, onRemove, onPreview }: DocumentCardProps) {
+export function DocumentCard({ file, signatureImage, prioritySignatory, onRemove, onPreview }: DocumentCardProps) {
   const [status, setStatus] = useState<'pending' | 'signing' | 'signed' | 'rejected'>('pending');
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const { toast } = useToast();
@@ -35,23 +36,27 @@ export function DocumentCard({ file, signatureImage, onRemove, onPreview }: Docu
     setStatus('signing');
     try {
       const text = await extractPdfText(file);
-      const detection = await detectSignaturePlacement({ pdfText: text });
+      const detection = await detectSignaturePlacement({ 
+        pdfText: text,
+        signatoryName: prioritySignatory || undefined
+      });
       
       const signedBytes = await signPdf(
         file, 
         signatureImage, 
-        detection.detectedPlacementText || "Signature"
+        detection.detectedPlacements
       );
       
       const blob = new Blob([signedBytes], { type: 'application/pdf' });
       setSignedUrl(URL.createObjectURL(blob));
       setStatus('signed');
       
+      const count = detection.detectedPlacements.length;
       toast({
         title: "Signed Successfully",
-        description: detection.detectedPlacementText 
-          ? `Detected placement near: ${detection.detectedPlacementText}`
-          : "Document signed successfully.",
+        description: count > 0 
+          ? `Placed ${count} signature(s) on detected areas.`
+          : "Signed at fallback location.",
       });
     } catch (error) {
       console.error(error);
