@@ -1,8 +1,33 @@
+
 import * as pdfjsLib from 'pdfjs-dist';
 import { PDFDocument } from 'pdf-lib';
 
 if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
+}
+
+/**
+ * Checks if two name strings match, ignoring case, extra whitespace, 
+ * and allowing for differences like middle initials or slight variations.
+ */
+function fuzzyNameMatch(docText: string, targetName: string): boolean {
+  const normalize = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '');
+  
+  const docNorm = normalize(docText);
+  const targetNorm = normalize(targetName);
+  
+  if (!docNorm || !targetNorm) return false;
+  
+  // Direct includes check
+  if (docNorm.includes(targetNorm) || targetNorm.includes(docNorm)) return true;
+  
+  // Word-based check: Ensure all significant words in target are in doc
+  const targetWords = targetNorm.split(/\s+/).filter(w => w.length > 2);
+  const docWords = docNorm.split(/\s+/);
+  
+  if (targetWords.length === 0) return false;
+  
+  return targetWords.every(tw => docWords.some(dw => dw.includes(tw) || tw.includes(dw)));
 }
 
 export async function extractPdfText(file: File): Promise<string> {
@@ -35,24 +60,22 @@ export async function signPdf(
   const signatureImg = await pdfDoc.embedPng(signatureImageBytes);
   const pages = pdfDoc.getPages();
 
-  // If no targets identified, fallback to last page bottom center
   if (targetTexts.length === 0) {
     targetTexts = ["SIGNATURE_FALLBACK_PLACEHOLDER"];
   }
 
   for (const target of targetTexts) {
     let foundPos: { pageIndex: number; x: number; y: number; textWidth: number; textHeight: number } | null = null;
-    const normalizedTarget = target.trim().toLowerCase();
 
-    // Search for coordinates for each target name
-    if (normalizedTarget !== "signature_fallback_placeholder") {
+    if (target !== "SIGNATURE_FALLBACK_PLACEHOLDER") {
+      // Search from last page backwards as signatures are usually at the end
       for (let i = pdfJsDoc.numPages; i >= 1; i--) {
         const page = await pdfJsDoc.getPage(i);
         const content = await page.getTextContent();
         
         const foundItem = content.items.find((item: any) => {
-          const itemStr = (item.str || "").trim().toLowerCase();
-          return itemStr.length > 2 && (itemStr.includes(normalizedTarget) || normalizedTarget.includes(itemStr));
+          const itemStr = (item.str || "").trim();
+          return itemStr.length > 2 && fuzzyNameMatch(itemStr, target);
         }) as any;
 
         if (foundItem && foundItem.transform) {
@@ -74,13 +97,12 @@ export async function signPdf(
     
     // STANDARDIZED SIZE LOGIC
     const sigDims = signatureImg.scale(1.0);
-    const STANDARD_WIDTH = 130; // Points
-    const MAX_SIG_HEIGHT = 60;  // Points
+    const STANDARD_WIDTH = 130; 
+    const MAX_SIG_HEIGHT = 60;  
     
     let sigWidth = STANDARD_WIDTH;
     let sigHeight = (sigDims.height / sigDims.width) * sigWidth;
     
-    // Ensure height is not too big for the standard width
     if (sigHeight > MAX_SIG_HEIGHT) {
       sigHeight = MAX_SIG_HEIGHT;
       sigWidth = (sigDims.width / sigDims.height) * sigHeight;
@@ -90,11 +112,10 @@ export async function signPdf(
     let y = 100;
 
     if (foundPos) {
-      // Center signature horizontally on detected name
+      // Center signature horizontally on detected name area
       x = foundPos.x + (foundPos.textWidth / 2) - (sigWidth / 2);
       
-      // Position signature so it overlaps significantly with the name for authenticity
-      // Placing it above the baseline but extending down into the text area
+      // Position signature so it overlaps significantly with the name for authenticity (45% overlap)
       y = foundPos.y - (sigHeight * 0.45); 
       
       // Keep within page bounds
