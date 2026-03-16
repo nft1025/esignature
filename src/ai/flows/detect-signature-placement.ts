@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview A Genkit flow to detect optimal placements for digital signatures within a PDF text.
