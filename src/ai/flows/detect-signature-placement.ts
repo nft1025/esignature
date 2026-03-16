@@ -69,6 +69,7 @@ const detectSignaturePlacementFlow = ai.defineFlow(
           return priorityWords.every(word => detectedNorm.includes(word));
         });
 
+        // If priority was provided but no match found, strictly return empty
         return { detectedPlacements: filtered.slice(0, 1) };
       }
 
