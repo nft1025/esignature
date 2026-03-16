@@ -13,7 +13,7 @@ const DetectSignaturePlacementInputSchema = z.object({
 export type DetectSignaturePlacementInput = z.infer<typeof DetectSignaturePlacementInputSchema>;
 
 const DetectSignaturePlacementOutputSchema = z.object({
-  detectedPlacements: z.array(z.string()).describe('A list of EXACT names found in the document text requiring signatures.'),
+  detectedPlacements: z.array(z.string()).describe('A list of EXACT names or entities found in the document requiring signatures.'),
 });
 export type DetectSignaturePlacementOutput = z.infer<typeof DetectSignaturePlacementOutputSchema>;
 
@@ -28,13 +28,14 @@ const prompt = ai.definePrompt({
   prompt: `You are a professional document analysis agent. Your task is to identify formal signature blocks in the provided text.
 
 RULES:
-1. FOCUS ON SIGNATURE BLOCKS: Look for names appearing under or near headers like "APPROVED BY:", "SIGNED BY:", "REQUESTED BY:", "ENDORSED BY:", "Signature:", "Signatory:", or at the end of the document.
+1. FOCUS ON SIGNATURE BLOCKS: Look for names or entities (like "Stanley Co.") appearing under headers like "APPROVED BY:", "SIGNED BY:", "REQUESTED BY:", "ENDORSED BY:", "Signature:", "Signatory:", or at the very end of the document.
 2. SIDE-BY-SIDE SUPPORT: Be aware that multiple names might appear on the same line (columns). Identify all such names.
-3. IGNORE HEADERS: Never return names from letterheads, address blocks, or standard header information.
-4. PRIORITY SIGNATORY:
-   - If signatoryName is provided ("{{{signatoryName}}}"), you MUST ONLY return that name (or the exact version of it found in the text).
-   - If the name is NOT found, return an empty array [].
-5. FORMAT: Return only the names, exactly as they appear in the text (e.g., "MARIEL CRISOSTOMO").
+3. ENTITY SUPPORT: Signatories can be people or companies (e.g., "Stanley Co.").
+4. IGNORE HEADERS: Never return names from letterheads, address blocks, or standard header information at the top of pages.
+5. PRIORITY SIGNATORY:
+   - If signatoryName is provided ("{{{signatoryName}}}"), you MUST ONLY return that specific name/entity as found in the text.
+   - If that name is NOT found in a signature context, return an empty array [].
+6. FORMAT: Return only the names, exactly as they appear in the text.
 
 Document Text:
 ---
@@ -57,21 +58,17 @@ const detectSignaturePlacementFlow = ai.defineFlow(
         return { detectedPlacements: [] };
       }
 
-      // Programmatic Guard: If a priority name is set, strictly filter for it.
+      // Strict programmatic filtering for Priority Signatory
       if (input.signatoryName) {
-        const priority = input.signatoryName.toLowerCase().trim();
-        const priorityWords = priority.split(/\s+/).filter(w => w.length >= 2);
+        const priority = input.signatoryName.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
         
         const filtered = output.detectedPlacements.filter(detectedName => {
-          const detectedNorm = detectedName.toLowerCase().trim();
-          // If priority is very short (like "Stanley Co"), use a more lenient word-based match
-          if (priorityWords.length < 2) {
-             return detectedNorm.includes(priority);
-          }
-          return priorityWords.every(word => detectedNorm.includes(word));
+          const detectedNorm = detectedName.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+          // Basic substring check for robustness against middle initials or trailing punctuation
+          return detectedNorm.includes(priority) || priority.includes(detectedNorm);
         });
 
-        // Return the first valid match found
+        // Return only the first valid priority match
         return { detectedPlacements: filtered.slice(0, 1) };
       }
 
