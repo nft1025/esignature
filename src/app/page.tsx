@@ -5,13 +5,15 @@ import React, { useState, useRef } from 'react';
 import { SignatureUploader } from '@/components/SignatureUploader';
 import { DocumentCard } from '@/components/DocumentCard';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { FilePlus, PenTool, LayoutDashboard, ShieldCheck, Files, FileText } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { FilePlus, PenTool, LayoutDashboard, ShieldCheck, Files, FileText, User, Search } from 'lucide-react';
 import { Toaster } from '@/components/ui/toaster';
 
 export default function QuickSign() {
   const [signatureImage, setSignatureImage] = useState<string | null>(null);
+  const [signatoryName, setSignatoryName] = useState<string>('');
   const [documents, setDocuments] = useState<File[]>([]);
   const [previewFile, setPreviewFile] = useState<{file: File, url: string} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -33,7 +35,6 @@ export default function QuickSign() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
       <header className="border-b bg-white/80 backdrop-blur-md sticky top-0 z-10">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -56,21 +57,53 @@ export default function QuickSign() {
       <main className="flex-1 container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
-          {/* Left Column: Signature Setup */}
+          {/* Left Column: Signature & Settings */}
           <div className="lg:col-span-4 space-y-6">
             <SignatureUploader onSignatureUpload={setSignatureImage} />
             
+            <Card className="bg-white/50 backdrop-blur-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <User className="w-5 h-5 text-primary" />
+                  Priority Signatory
+                </CardTitle>
+                <CardDescription>
+                  Enter a name to prioritize for signing.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Label htmlFor="signatory-name" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Signatory Name (Optional)
+                  </Label>
+                  <div className="relative">
+                    <Input 
+                      id="signatory-name"
+                      placeholder="e.g. John Doe" 
+                      value={signatoryName}
+                      onChange={(e) => setSignatoryName(e.target.value)}
+                      className="pl-9"
+                    />
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground leading-relaxed mt-2">
+                    {signatoryName 
+                      ? `AI will prioritize signing for "${signatoryName}".` 
+                      : "Leave blank to automatically detect and sign all signatory areas found in the documents."}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
             <Card className="bg-gradient-to-br from-primary to-primary/80 text-white border-none shadow-xl">
               <CardContent className="p-6">
-                <h3 className="font-bold text-lg mb-2">Smart AI Detection</h3>
+                <h3 className="font-bold text-lg mb-2">Smart Batch Signing</h3>
                 <p className="text-white/80 text-sm leading-relaxed mb-4">
-                  QuickSign automatically scans your documents for keywords like 
-                  <span className="font-mono bg-white/20 px-1 mx-1 rounded text-white font-semibold">APPROVED BY</span> 
-                  to suggest the best signing spot.
+                  Upload multiple PDFs and QuickSign will use AI to find the correct signing spots instantly.
                 </p>
                 <div className="flex items-center gap-2 text-white/60 text-xs">
                   <ShieldCheck className="w-4 h-4" />
-                  Processed securely in your browser.
+                  Secure, private, and local processing.
                 </div>
               </CardContent>
             </Card>
@@ -119,6 +152,7 @@ export default function QuickSign() {
                     key={`${file.name}-${index}`} 
                     file={file} 
                     signatureImage={signatureImage}
+                    prioritySignatory={signatoryName}
                     onRemove={() => removeDocument(index)}
                     onPreview={() => openPreview(file)}
                   />
@@ -132,12 +166,15 @@ export default function QuickSign() {
       {/* PDF Preview Modal */}
       <Dialog open={!!previewFile} onOpenChange={() => setPreviewFile(null)}>
         <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 overflow-hidden">
-          <DialogHeader className="p-4 border-b">
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="w-5 h-5" />
+          <div className="p-4 border-b flex items-center justify-between bg-white">
+            <h3 className="font-bold flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
               {previewFile?.file.name}
-            </DialogTitle>
-          </DialogHeader>
+            </h3>
+            <Button variant="ghost" size="icon" onClick={() => setPreviewFile(null)}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
           <div className="flex-1 bg-muted relative">
             {previewFile && (
               <iframe 
@@ -154,3 +191,6 @@ export default function QuickSign() {
     </div>
   );
 }
+
+import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { X } from 'lucide-react';
