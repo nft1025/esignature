@@ -53,7 +53,6 @@ export async function signPdf(
   targetTexts: string[]
 ): Promise<Uint8Array> {
   const arrayBuffer = await file.arrayBuffer();
-  // We need two copies because the libraries might mutate or conflict if shared
   const pdfLibBytes = new Uint8Array(arrayBuffer.slice(0));
   const pdfJsBytes = new Uint8Array(arrayBuffer.slice(0));
   
@@ -63,14 +62,12 @@ export async function signPdf(
   const signatureImg = await pdfDoc.embedPng(signatureImageBytes);
   const pages = pdfDoc.getPages();
 
-  // If no targets detected, return the original PDF
   if (targetTexts.length === 0) {
     return await pdfDoc.save();
   }
 
   let placementsCount = 0;
 
-  // Process each target name detected by AI
   for (const target of targetTexts) {
     let foundPos: { pageIndex: number; x: number; y: number; textWidth: number; textHeight: number } | null = null;
 
@@ -79,11 +76,10 @@ export async function signPdf(
       const page = await pdfJsDoc.getPage(i);
       const content = await page.getTextContent();
       
-      // Group text items into lines based on Y coordinate with 10pt tolerance
       const linesMap = new Map<number, any[]>();
       for (const item of content.items as any[]) {
         const y = Math.round(item.transform[5]);
-        let matchedY = Array.from(linesMap.keys()).find(existingY => Math.abs(existingY - y) < 10);
+        let matchedY = Array.from(linesMap.keys()).find(existingY => Math.abs(existingY - y) < 8);
         
         if (matchedY !== undefined) {
           linesMap.get(matchedY)!.push(item);
@@ -92,19 +88,16 @@ export async function signPdf(
         }
       }
 
-      // Sort lines by Y (bottom to top is usually ascending in PDF coordinates)
       const sortedYs = Array.from(linesMap.keys()).sort((a, b) => a - b);
 
       for (const y of sortedYs) {
         const lineItems = linesMap.get(y)!;
-        // Sort items within the line by X coordinate
         lineItems.sort((a, b) => a.transform[4] - b.transform[4]);
         const lineText = lineItems.map(it => it.str).join(" ");
 
         if (fuzzyNameMatch(lineText, target)) {
           const firstItem = lineItems[0];
           const lastItem = lineItems[lineItems.length - 1];
-          // Calculate bounding box for the line
           const totalWidth = (lastItem.transform[4] + (lastItem.width || 40)) - firstItem.transform[4];
           
           foundPos = {
@@ -131,17 +124,14 @@ export async function signPdf(
       let sigWidth = STANDARD_WIDTH;
       let sigHeight = (sigDims.height / sigDims.width) * sigWidth;
       
-      // Cap height if the signature is too tall
       if (sigHeight > MAX_SIG_HEIGHT) {
         sigHeight = MAX_SIG_HEIGHT;
         sigWidth = (sigDims.width / sigDims.height) * sigHeight;
       }
 
-      // Center horizontally on the name, shift down vertically for overlap
       let x = foundPos.x + (foundPos.textWidth / 2) - (sigWidth / 2);
-      let y = foundPos.y - (sigHeight * 0.4); 
+      let y = foundPos.y - (sigHeight * 0.45); 
       
-      // Ensure signature stays within page bounds
       x = Math.max(10, Math.min(x, pageWidth - sigWidth - 10));
       y = Math.max(10, Math.min(y, pageHeight - sigHeight - 10));
 
@@ -155,7 +145,6 @@ export async function signPdf(
     }
   }
 
-  // Fallback: If AI detected a name but coordinate mapping failed
   if (placementsCount === 0 && targetTexts.length > 0) {
     const lastPage = pages[pages.length - 1];
     const { width, height } = lastPage.getSize();
