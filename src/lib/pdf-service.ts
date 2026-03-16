@@ -9,6 +9,7 @@ if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
  * Normalizes strings for robust fuzzy matching of names.
  */
 function normalizeForMatch(s: string): string {
+  // Lowercase, trim, and remove all punctuation for matching
   return s.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ');
 }
 
@@ -24,10 +25,11 @@ function fuzzyNameMatch(docText: string, targetName: string): boolean {
   // Exact match after normalization
   if (docNorm === targetNorm || docNorm.includes(targetNorm)) return true;
   
-  // Partial word match (e.g., "Stanley Co" matches "Stanley Co.")
+  // Word-based verification
   const targetWords = targetNorm.split(' ').filter(w => w.length >= 1);
   if (targetWords.length === 0) return false;
   
+  // All words in target must be found in doc segment in order
   return targetWords.every(tw => docNorm.includes(tw));
 }
 
@@ -75,7 +77,8 @@ export async function signPdf(
       for (const item of content.items as any[]) {
         if (!item.str.trim()) continue; 
         const y = Math.round(item.transform[5]);
-        let matchedY = Array.from(linesMap.keys()).find(existingY => Math.abs(existingY - y) < 8);
+        // Use a slightly larger tolerance for messy layouts
+        let matchedY = Array.from(linesMap.keys()).find(existingY => Math.abs(existingY - y) < 10);
         if (matchedY !== undefined) {
           linesMap.get(matchedY)!.push(item);
         } else {
@@ -90,7 +93,7 @@ export async function signPdf(
         const lineItems = linesMap.get(y)!;
         lineItems.sort((a, b) => a.transform[4] - b.transform[4]);
 
-        // Sliding window to find the name in the line, supporting side-by-side signatories
+        // Sliding window to find the name in the line, supports multiple names in one line (columns)
         for (let start = 0; start < lineItems.length; start++) {
           for (let end = start + 1; end <= lineItems.length; end++) {
             const segment = lineItems.slice(start, end);
@@ -99,14 +102,22 @@ export async function signPdf(
             if (fuzzyNameMatch(segmentText, target)) {
               const firstItem = segment[0];
               const lastItem = segment[segment.length - 1];
-              // Calculate total width of the segment
-              const totalWidth = (lastItem.transform[4] + (lastItem.width || 0)) - firstItem.transform[4];
-              // Use font size from transform matrix (usually index 0 or 3)
-              const fontSize = Math.abs(firstItem.transform[0]) || Math.abs(firstItem.transform[3]) || 12;
+              
+              // Width calculation needs to account for the width property reported by pdfjs
+              const startX = firstItem.transform[4];
+              const endX = lastItem.transform[4] + (lastItem.width || 0);
+              const totalWidth = endX - startX;
+              
+              // Detect font size
+              const fontSize = Math.max(
+                Math.abs(firstItem.transform[0]), 
+                Math.abs(firstItem.transform[3]), 
+                10
+              );
 
               foundPos = {
                 pageIndex: i - 1,
-                x: firstItem.transform[4],
+                x: startX,
                 y: y,
                 textWidth: totalWidth,
                 textHeight: fontSize
@@ -126,11 +137,11 @@ export async function signPdf(
       const { width: pageWidth, height: pageHeight } = page.getSize();
       
       const sigDims = signatureImg.scale(1.0);
-      const MAX_WIDTH = 140; 
-      const MAX_HEIGHT = 65;  
+      const MAX_WIDTH = 150; 
+      const MAX_HEIGHT = 70;  
       
-      // Scale signature based on text width but within limits
-      let sigWidth = Math.min(MAX_WIDTH, Math.max(80, foundPos.textWidth * 1.2));
+      // Scale signature to be slightly wider than the detected text for natural look
+      let sigWidth = Math.min(MAX_WIDTH, Math.max(90, foundPos.textWidth * 1.3));
       let sigHeight = (sigDims.height / sigDims.width) * sigWidth;
       
       if (sigHeight > MAX_HEIGHT) {
@@ -138,16 +149,17 @@ export async function signPdf(
         sigWidth = (sigDims.width / sigDims.height) * sigHeight;
       }
 
-      // Horizontally center over the name
+      // Horizontally center over the name segment
       let x = foundPos.x + (foundPos.textWidth / 2) - (sigWidth / 2);
-      // Vertically place it so it overlaps slightly above the name
-      // PDF Y is bottom-up. foundPos.y is the baseline. 
-      // Moving up by 15-20% of sigHeight to create overlap as requested.
-      let y = foundPos.y + (foundPos.textHeight * 0.1); 
       
-      // Constraints to keep signature on page
-      x = Math.max(10, Math.min(x, pageWidth - sigWidth - 10));
-      y = Math.max(10, Math.min(y, pageHeight - sigHeight - 10));
+      // Vertical placement: Overlap slightly with the name. 
+      // PDF Y is bottom-up. foundPos.y is the text baseline.
+      // Move up by a small fraction of text height to sit right on/above it.
+      let y = foundPos.y + (foundPos.textHeight * 0.15); 
+      
+      // Boundary constraints
+      x = Math.max(5, Math.min(x, pageWidth - sigWidth - 5));
+      y = Math.max(5, Math.min(y, pageHeight - sigHeight - 5));
 
       page.drawImage(signatureImg, {
         x,
@@ -159,15 +171,15 @@ export async function signPdf(
     }
   }
 
-  // Fallback to last page bottom right if no match found
+  // Fallback placement if AI detected names but coordinates couldn't be resolved
   if (totalPlacements === 0 && targetTexts.length > 0) {
     const lastPage = pages[pages.length - 1];
     const { width, height } = lastPage.getSize();
     lastPage.drawImage(signatureImg, {
-      x: width - 160,
-      y: 100,
-      width: 130,
-      height: 60,
+      x: width - 170,
+      y: 80,
+      width: 140,
+      height: 65,
     });
   }
 
