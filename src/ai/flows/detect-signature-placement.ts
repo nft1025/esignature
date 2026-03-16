@@ -25,17 +25,16 @@ const prompt = ai.definePrompt({
   name: 'detectSignaturePlacementPrompt',
   input: { schema: DetectSignaturePlacementInputSchema },
   output: { schema: DetectSignaturePlacementOutputSchema },
-  prompt: `You are a strict document analysis agent. Your ONLY task is to identify specific signature lines in the provided text.
+  prompt: `You are a professional document analysis agent. Your task is to identify formal signature blocks in the provided text.
 
-RULES FOR DETECTION:
-1. FOCUS ON SIGNATORY AREAS: Look for names appearing near phrases like "APPROVED BY", "SIGNED BY", "Signature:", "Signatory:", or at the end of sections/documents.
-2. IGNORE HEADERS AND SALUTATIONS: Never return names from address blocks, headers, or greetings (e.g., "To: [Name]", "Dear [Name]").
-3. PRIORITY MATCHING:
-   - If signatoryName IS PROVIDED ("{{{signatoryName}}}"):
-     - You MUST ONLY return names that are a semantic match for "{{{signatoryName}}}".
-     - A match includes variations with middle initials, full names, or different casing.
-     - RETURN THE EXACT STRING AS IT APPEARS IN THE TEXT.
-     - IF NO MATCH IS FOUND, RETURN AN EMPTY ARRAY [].
+RULES:
+1. FOCUS ON SIGNATURE BLOCKS: Look for names appearing under or near phrases like "APPROVED BY:", "SIGNED BY:", "Signature:", "Signatory:", or at the end of the document.
+2. SIDE-BY-SIDE SUPPORT: Be aware that two names might appear on the same line or in parallel columns. Return each unique name found.
+3. IGNORE HEADERS: Never return names from letterheads, address blocks, or standard header information.
+4. PRIORITY SIGNATORY:
+   - If signatoryName is provided ("{{{signatoryName}}}"), you MUST ONLY return that name (or the exact version of it found in the text).
+   - If the name is NOT found, return an empty array [].
+5. FORMAT: Return only the names, exactly as they appear in the text (e.g., "MARIEL CRISOSTOMO").
 
 Document Text:
 ---
@@ -58,18 +57,16 @@ const detectSignaturePlacementFlow = ai.defineFlow(
         return { detectedPlacements: [] };
       }
 
-      // Final Programmatic Guard: Verify the AI results against the priority input
+      // Programmatic Guard: If a priority name is set, strictly filter for it.
       if (input.signatoryName) {
         const priority = input.signatoryName.toLowerCase().trim();
         const priorityWords = priority.split(/\s+/).filter(w => w.length >= 2);
         
         const filtered = output.detectedPlacements.filter(detectedName => {
           const detectedNorm = detectedName.toLowerCase().trim();
-          // Ensure at least all meaningful priority words are present in the detected name
           return priorityWords.every(word => detectedNorm.includes(word));
         });
 
-        // If priority was provided but no match found, strictly return empty
         return { detectedPlacements: filtered.slice(0, 1) };
       }
 
