@@ -76,10 +76,13 @@ export async function signPdf(
       const page = await pdfJsDoc.getPage(i);
       const content = await page.getTextContent();
       
+      // Group items into logical lines using a 12pt Y-coordinate threshold
       const linesMap = new Map<number, any[]>();
       for (const item of content.items as any[]) {
+        if (!item.str.trim()) continue; // Skip empty fragments
+        
         const y = Math.round(item.transform[5]);
-        let matchedY = Array.from(linesMap.keys()).find(existingY => Math.abs(existingY - y) < 8);
+        let matchedY = Array.from(linesMap.keys()).find(existingY => Math.abs(existingY - y) < 12);
         
         if (matchedY !== undefined) {
           linesMap.get(matchedY)!.push(item);
@@ -88,6 +91,7 @@ export async function signPdf(
         }
       }
 
+      // Sort Y coordinates to check the "bottom-most" lines first (conventional for signatures)
       const sortedYs = Array.from(linesMap.keys()).sort((a, b) => a - b);
 
       for (const y of sortedYs) {
@@ -118,8 +122,8 @@ export async function signPdf(
       const { width: pageWidth, height: pageHeight } = page.getSize();
       
       const sigDims = signatureImg.scale(1.0);
-      const STANDARD_WIDTH = 130; 
-      const MAX_SIG_HEIGHT = 60;  
+      const STANDARD_WIDTH = 140; 
+      const MAX_SIG_HEIGHT = 70;  
       
       let sigWidth = STANDARD_WIDTH;
       let sigHeight = (sigDims.height / sigDims.width) * sigWidth;
@@ -129,11 +133,13 @@ export async function signPdf(
         sigWidth = (sigDims.width / sigDims.height) * sigHeight;
       }
 
+      // Center the signature horizontally over the name and overlap vertically
       let x = foundPos.x + (foundPos.textWidth / 2) - (sigWidth / 2);
-      let y = foundPos.y - (sigHeight * 0.45); 
+      let y = foundPos.y - (sigHeight * 0.35); // Overlap slightly with the name line
       
-      x = Math.max(10, Math.min(x, pageWidth - sigWidth - 10));
-      y = Math.max(10, Math.min(y, pageHeight - sigHeight - 10));
+      // Ensure it stays within page boundaries
+      x = Math.max(15, Math.min(x, pageWidth - sigWidth - 15));
+      y = Math.max(15, Math.min(y, pageHeight - sigHeight - 15));
 
       page.drawImage(signatureImg, {
         x,
@@ -145,14 +151,15 @@ export async function signPdf(
     }
   }
 
+  // Final Fallback: If AI detected a name but coordinates failed, stamp at standard bottom location
   if (placementsCount === 0 && targetTexts.length > 0) {
     const lastPage = pages[pages.length - 1];
     const { width, height } = lastPage.getSize();
     lastPage.drawImage(signatureImg, {
-      x: width - 150,
-      y: 80,
-      width: 120,
-      height: 50,
+      x: width - 180,
+      y: 100,
+      width: 140,
+      height: 60,
     });
   }
 
