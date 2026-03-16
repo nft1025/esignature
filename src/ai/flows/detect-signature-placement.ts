@@ -61,11 +61,11 @@ const detectSignaturePlacementFlow = ai.defineFlow(
       // Final Programmatic Guard: Verify the AI results against the priority input
       if (input.signatoryName) {
         const priority = input.signatoryName.toLowerCase().trim();
-        const priorityWords = priority.split(/\s+/).filter(w => w.length > 1);
+        const priorityWords = priority.split(/\s+/).filter(w => w.length >= 2);
         
         const filtered = output.detectedPlacements.filter(detectedName => {
           const detectedNorm = detectedName.toLowerCase().trim();
-          // Ensure at least 2 major words match if provided, or all if short
+          // Ensure at least all meaningful priority words are present in the detected name
           return priorityWords.every(word => detectedNorm.includes(word));
         });
 
