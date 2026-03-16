@@ -25,11 +25,11 @@ const prompt = ai.definePrompt({
   name: 'detectSignaturePlacementPrompt',
   input: { schema: DetectSignaturePlacementInputSchema },
   output: { schema: DetectSignaturePlacementOutputSchema },
-  prompt: `You are a document analysis agent. Your task is to identify specific signature lines or names requiring a signature in the provided text.
+  prompt: `You are a strict document analysis agent. Your ONLY task is to identify specific signature lines in the provided text.
 
-RULES:
-1. IGNORE HEADERS AND SALUTATIONS: Never return names from address blocks or greetings (e.g., "To: [Name]").
-2. FOCUS ON SIGNATORY AREAS: Look for names appearing near phrases like "APPROVED BY", "SIGNED BY", "Signature:", "Signatory:", or at the end of sections/documents.
+RULES FOR DETECTION:
+1. FOCUS ON SIGNATORY AREAS: Look for names appearing near phrases like "APPROVED BY", "SIGNED BY", "Signature:", "Signatory:", or at the end of sections/documents.
+2. IGNORE HEADERS AND SALUTATIONS: Never return names from address blocks, headers, or greetings (e.g., "To: [Name]", "Dear [Name]").
 3. PRIORITY MATCHING:
    - If signatoryName IS PROVIDED ("{{{signatoryName}}}"):
      - You MUST ONLY return names that are a semantic match for "{{{signatoryName}}}".
